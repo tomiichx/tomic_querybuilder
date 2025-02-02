@@ -1,8 +1,8 @@
 ---@class QueryBuilder
-local QueryBuilder <const> = require 'src.classes.QueryBuilder'
+local QueryBuilder = require 'src.classes.QueryBuilder'
 
 ---@class DB
-local DB = lib.class('DB')
+DB = lib.class('DB')
 
 ---Create a new QueryBuilder instance
 ---@param name string

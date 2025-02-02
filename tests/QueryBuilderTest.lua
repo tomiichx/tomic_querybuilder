@@ -1,4 +1,13 @@
-local DB <const> = require 'src.classes.DB'
+---@class Utilities
+local Utilities = require 'src.classes.Utilities'
+
+if Utilities.isProduction() then
+    print(('[%s]: \'QueryBuilder\' tests skipped in the production environment.'):format(Utilities.CURRENT_RESOURCE_NAME))
+    return
+end
+
+---@class DB
+local DB = require 'src.classes.DB'
 
 local function assertEquals(expected, actual, message)
     if expected ~= actual then
@@ -108,6 +117,19 @@ local tests = {
         )
     end,
 
+    -- Test group by
+    function()
+        local query = DB:table('users')
+            :groupBy('group')
+            :buildQuery()
+
+        return assertEquals(
+            'SELECT * FROM `users` GROUP BY `group`',
+            query,
+            'Group by clause should be correctly formed'
+        )
+    end,
+
     -- Test order by
     function()
         local query = DB:table('users')
@@ -173,13 +195,14 @@ local tests = {
             :select('id', 'username', 'email')
             :where('age', '>', 18)
             :where('status', 'active')
+            :groupBy('group')
             :orderBy('username', 'DESC')
             :limit(10)
             :offset(20)
             :buildQuery()
 
         return assertEquals(
-            'SELECT `id`, `username`, `email` FROM `users` WHERE `age` > ? AND `status` = ? ORDER BY `username` DESC LIMIT 10 OFFSET 20',
+            'SELECT `id`, `username`, `email` FROM `users` WHERE `age` > ? AND `status` = ? GROUP BY `group` ORDER BY `username` DESC LIMIT 10 OFFSET 20',
             query,
             'Complex query should be correctly formed'
         ) and assertTableEquals(
@@ -243,7 +266,24 @@ local tests = {
             params,
             'Delete parameters should be correctly bound'
         )
-    end
+    end,
+
+    -- Test where raw
+    function()
+        local query, params = DB:table('users')
+            :whereRaw('age > ? AND status = ?', 18, 'active')
+            :buildQuery()
+
+        return assertEquals(
+            'SELECT * FROM `users` WHERE age > ? AND status = ?',
+            query,
+            'Where raw clause should be correctly formed'
+        ) and assertTableEquals(
+            { 18, 'active' },
+            params,
+            'Where raw parameters should be correctly bound'
+        )
+    end,
 }
 
 CreateThread(function()

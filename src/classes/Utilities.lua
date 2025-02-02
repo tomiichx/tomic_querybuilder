@@ -1,6 +1,19 @@
 ---@class Utilities
 local Utilities = lib.class('Utilities')
 
+local CURRENT_RESOURCE_NAME <const> = GetCurrentResourceName()
+local CURRENT_ENVIRONMENT <const> = GetResourceMetadata(CURRENT_RESOURCE_NAME, 'environment', 0)
+local PRODUCTION <const> = 'production'
+
+---@type string
+Utilities.CURRENT_RESOURCE_NAME = CURRENT_RESOURCE_NAME
+
+---Check if the current environment is production
+---@return boolean
+function Utilities.isProduction()
+    return CURRENT_ENVIRONMENT == PRODUCTION
+end
+
 ---Map function for tables
 ---@param tbl table The table to map over
 ---@param fn function The function to apply to each element
@@ -38,6 +51,11 @@ function Utilities.getSorted(tbl)
     table.sort(sortedKeys)
 
     return sortedKeys
+end
+
+function Utilities.isEmpty(value)
+    local trimmedValue = (value or ''):match('^%s*(.-)%s*$')
+    return trimmedValue == nil or trimmedValue == ''
 end
 
 return Utilities

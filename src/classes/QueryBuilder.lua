@@ -1,5 +1,8 @@
-local Input <const> = require 'src.classes.Input'
-local Utilities <const> = require 'src.classes.Utilities'
+---@class Input
+local Input = require 'src.classes.Input'
+
+---@class Utilities
+local Utilities = require 'src.classes.Utilities'
 
 ---@class QueryBuilder
 ---@field selects table
@@ -16,6 +19,10 @@ local QueryBuilder = lib.class('QueryBuilder')
 ---@param tableName string
 ---@return QueryBuilder
 function QueryBuilder:constructor(tableName)
+    if Utilities.isEmpty(tableName) then
+        error(('[%s]: Table name must be provided.'):format(Utilities.CURRENT_RESOURCE_NAME))
+    end
+
     self.selects = {}
     self.from = tableName
     self.wheres = {}
@@ -45,9 +52,10 @@ end
 
 ---Add a raw where clause
 ---@param expression string
+---@param ... any
 ---@return QueryBuilder
-function QueryBuilder:whereRaw(expression)
-    self.wheres[#self.wheres + 1] = expression
+function QueryBuilder:whereRaw(expression, ...)
+    self.wheres[#self.wheres + 1] = { _raw = expression, params = Input:sanitizeTable({ ... }) }
     return self
 end
 
@@ -62,16 +70,22 @@ function QueryBuilder:where(column, operator, value)
         operator = '='
     end
 
-    value = type(value) == 'table' and
-        Input:sanitizeTable(value) or
-        Input:sanitize(value)
-
     self.wheres[#self.wheres + 1] = {
         column = column,
         operator = operator,
-        value = value
+        value = type(value) == 'table' and
+            Input:sanitizeTable(value) or
+            Input:sanitize(value)
     }
 
+    return self
+end
+
+---Add a GROUP BY clause
+---@param column string
+---@return QueryBuilder
+function QueryBuilder:groupBy(column)
+    self.groupBys[#self.groupBys + 1] = column
     return self
 end
 
@@ -87,7 +101,7 @@ function QueryBuilder:orderBy(column, direction)
     local preparedDirection = direction:upper()
 
     if preparedDirection ~= 'ASC' and preparedDirection ~= 'DESC' then
-        error('Invalid direction. Must be either ASC or DESC.')
+        error(('[%s]: Invalid direction provided.'):format(Utilities.CURRENT_RESOURCE_NAME))
     end
 
     self.orderBys[#self.orderBys + 1] = { column = column, direction = direction }
@@ -126,11 +140,28 @@ function QueryBuilder:get()
     return MySQL.query.await(query, params)
 end
 
----Execute the query and get the first result
+---Returns a number of found records
 ---@return number
 function QueryBuilder:count()
     local query, params = self:buildQuery(true)
     return MySQL.scalar.await(query, params)
+end
+
+---Execute the query and return paginated results
+---@param perPage number
+---@param page number
+---@return table
+function QueryBuilder:paginate(perPage, page)
+    local total = self:count()
+    local results = self:limit(perPage):offset((page - 1) * perPage):get()
+
+    return {
+        data = results,
+        totalCount = total,
+        perPage = perPage,
+        currentPage = page,
+        lastPage = math.ceil(total / perPage)
+    }
 end
 
 ---Insert data into the table
@@ -180,6 +211,13 @@ function QueryBuilder:buildSelectQuery(isCount)
         params = whereParams
     end
 
+    if #self.groupBys > 0 then
+        query[#query + 1] = 'GROUP BY ' .. table.concat(
+            Utilities.map(self.groupBys, Utilities.ensureBackticks),
+            ', '
+        )
+    end
+
     if #self.orderBys > 0 then
         local clauses = {}
 
@@ -216,6 +254,12 @@ function QueryBuilder:buildWhereClause(params)
     local clauses = {}
 
     for _, where in ipairs(self.wheres) do
+        if where._raw then
+            clauses[#clauses + 1] = where._raw
+            params = where.params
+            goto continue
+        end
+
         if type(where) == 'string' then
             clauses[#clauses + 1] = where
         else
@@ -226,6 +270,8 @@ function QueryBuilder:buildWhereClause(params)
 
             params[#params + 1] = where.value
         end
+
+        ::continue::
     end
 
     return table.concat(clauses, ' AND '), params
@@ -242,7 +288,9 @@ function QueryBuilder:buildInsertQuery(data)
     for _, column in ipairs(Utilities.getSorted(data)) do
         columns[#columns + 1] = Utilities.ensureBackticks(column)
         values[#values + 1] = '?'
-        params[#params + 1] = data[column]
+        params[#params + 1] = type(data[column]) == 'table' and
+            json.encode(data[column]) or
+            data[column]
     end
 
     return

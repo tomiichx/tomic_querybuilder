@@ -1,4 +1,13 @@
-local Input <const> = require 'src.classes.Input'
+---@class Utilities
+local Utilities = require 'src.classes.Utilities'
+
+if Utilities.isProduction() then
+    print(('[%s]: \'Input\' tests skipped in the production environment.'):format(Utilities.CURRENT_RESOURCE_NAME))
+    return
+end
+
+---@class Input
+local Input = require 'src.classes.Input'
 
 local function assertEquals(expected, actual, message)
     if expected ~= actual then
