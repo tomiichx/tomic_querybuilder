@@ -18,12 +18,13 @@ Here are some basic examples of how to use the query builder:
 ### Complex Select Query
 
 ```lua
--- Select with multiple conditions and sorting
+-- Retrieve a list of users filtered by group, grouped by identifier, ordered by lastname, and limited to 10 results
 local users = DB:table("users")
-    :select("firstname", "lastname")
+    :select("identifier", "firstname", "lastname")
     :where("group", "LIKE", "%admin")
-    :groupBy("group")
+    :groupBy("identifier")
     :orderBy("lastname", "ASC")
+    :limit(10)
     :get()
 ```
 
@@ -55,7 +56,7 @@ print(("Count: %d"):format(count))
 ### Basic Insert Query
 
 ```lua
--- Insert a new user
+-- Insert a new user record
 local insertId = DB:table("users"):insert({
     identifier = "char1:12345",
     firstname = "John",
@@ -68,7 +69,7 @@ local insertId = DB:table("users"):insert({
 ### Basic Update Query
 
 ```lua
--- Update user status
+-- Update user group
 local affectedRows = DB:table("users")
     :where("identifier", "char1:12345")
     :update({
@@ -79,7 +80,7 @@ local affectedRows = DB:table("users")
 ### Basic Delete Query
 
 ```lua
--- Delete user by ID
+-- Delete user by identifier
 local affectedRows = DB:table("users")
     :where("identifier", "char1:12345")
     :delete()
