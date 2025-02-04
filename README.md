@@ -7,6 +7,11 @@ A Laravel-inspired QueryBuilder for FiveM, built on top of ox_lib and oxmysql.
 - ox_lib
 - oxmysql
 
+## Credits
+
+This resource is built on top of [oxmysql](https://github.com/overextended/oxmysql) for database handling and [ox_lib](https://github.com/overextended/ox_lib) for miscellaneous utility functions.
+Huge thanks to the **Overextended** team for their contributions to the FiveM ecosystem.
+
 ## Installation
 
 - Under construction, please DO NOT use this yet. 🚧
