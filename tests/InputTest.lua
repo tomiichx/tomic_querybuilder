@@ -1,45 +1,45 @@
 ---@class Utilities
-local Utilities = require 'src.classes.Utilities'
+local Utilities = require "src.classes.Utilities"
 
 if Utilities.isProduction() then
-    print(('[%s]: \'Input\' tests skipped in the production environment.'):format(Utilities.CURRENT_RESOURCE_NAME))
+    print(("[%s]: 'Input' tests skipped in the production environment."):format(Utilities.CURRENT_RESOURCE_NAME))
     return
 end
 
 ---@class Input
-local Input = require 'src.classes.Input'
+local Input = require "src.classes.Input"
 
 local function assertEquals(expected, actual, message)
     if expected ~= actual then
-        print(('❌ Test failed: %s'):format(message))
-        print(('Expected: %s'):format(tostring(expected)))
-        print(('Actual: %s'):format(tostring(actual)))
+        print(("❌ Test failed: %s"):format(message))
+        print(("Expected: %s"):format(tostring(expected)))
+        print(("Actual: %s"):format(tostring(actual)))
         return false
     end
-    print(('✅ Test passed: %s'):format(message))
+    print(("✅ Test passed: %s"):format(message))
     return true
 end
 
 local tests = {
     function()
         local input = "normal string"
-        local sanitized = Input:sanitize(input)
+        local sanitized = Input.sanitize(input)
 
         return assertEquals(
             input,
             sanitized,
-            'Normal string should remain unchanged'
+            "Normal string should remain unchanged"
         )
     end,
 
     function()
         local input = "Tomić'); DROP TABLE users; --"
-        local sanitized = Input:sanitize(input)
+        local sanitized = Input.sanitize(input)
 
         return assertEquals(
             "Tomić''); DROP TABLE users; --",
             sanitized,
-            'SQL injection attempt should be escaped'
+            "SQL injection attempt should be escaped"
         )
     end,
 
@@ -49,12 +49,12 @@ local tests = {
             age = 25,
             email = "tomić@example.com"
         }
-        local sanitized = Input:sanitizeTable(input)
+        local sanitized = Input.sanitizeTable(input)
 
         return assertEquals(
             "Tomić''); DROP TABLE users; --",
             sanitized.name,
-            'SQL injection in table should be escaped'
+            "SQL injection in table should be escaped"
         )
     end,
 
@@ -68,18 +68,18 @@ local tests = {
             }
         }
 
-        local sanitized = Input:sanitizeTable(input)
+        local sanitized = Input.sanitizeTable(input)
 
         return assertEquals(
             "dark''); --",
             sanitized.user.settings.theme,
-            'Nested SQL injection should be escaped'
+            "Nested SQL injection should be escaped"
         )
     end
 }
 
 CreateThread(function()
-    print('Running Input sanitization tests...\n')
+    print("Running Input sanitization tests...\n")
     local totalTests = #tests
     local passedTests = 0
 
@@ -88,13 +88,13 @@ CreateThread(function()
             passedTests += 1
         end
 
-        print('')
+        print("")
     end
 
-    print(('\nTest summary: %d/%d tests passed'):format(passedTests, totalTests))
+    print(("\nTest summary: %d/%d tests passed"):format(passedTests, totalTests))
     if passedTests == totalTests then
-        print('🎉 All tests passed!')
+        print("🎉 All tests passed!")
     else
-        print('❌ Some tests failed!')
+        print("❌ Some tests failed!")
     end
 end)

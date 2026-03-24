@@ -9,21 +9,18 @@ A Laravel-inspired QueryBuilder for FiveM, built on top of ox_lib and oxmysql.
 
 ## Credits
 
-This resource is built on top of [oxmysql](https://github.com/overextended/oxmysql) for database handling and [ox_lib](https://github.com/overextended/ox_lib) for miscellaneous utility functions.
-Huge thanks to the **Overextended** team for their contributions to the FiveM ecosystem.
+Built on [oxmysql](https://github.com/overextended/oxmysql) and [ox_lib](https://github.com/overextended/ox_lib).
+Thanks to the **Overextended** team for their work on the FiveM ecosystem.
 
 ## Installation
 
-- Under construction, please DO NOT use this yet. 🚧
+Under construction - not ready for production use yet.
 
-## Usage Examples
+## Usage
 
-Here are some basic examples of how to use the query builder:
-
-### Complex Select Query
+### Select
 
 ```lua
--- Retrieve a list of users filtered by group, grouped by identifier, ordered by lastname, and limited to 10 results
 local users = DB:table("users")
     :select("identifier", "firstname", "lastname")
     :where("group", "LIKE", "%admin")
@@ -33,59 +30,110 @@ local users = DB:table("users")
     :get()
 ```
 
-### Basic Paginated Select Query
+### First (single row)
 
 ```lua
--- Get paginated results by specifying perPage and currentPage
-local entriesPerPage = 10
-local currentPage = 1
+local user = DB:table("users")
+    :where("identifier", "char1:12345")
+    :first()
+```
 
-local obj = DB:table("users")
+Returns a single row or `nil`. Uses `MySQL.single.await` under the hood.
+
+### Distinct
+
+```lua
+local roles = DB:table("users")
+    :distinct()
+    :select("role")
+    :get()
+```
+
+### Where clauses
+
+```lua
+-- Basic
+DB:table("users"):where("id", 1)
+DB:table("users"):where("age", ">", 18)
+
+-- OR
+DB:table("users")
+    :where("role", "admin")
+    :orWhere("role", "moderator")
+
+-- IN
+DB:table("users"):whereIn("id", { 1, 2, 3 })
+
+-- NULL checks
+DB:table("users"):whereNull("deleted_at")
+DB:table("users"):whereNotNull("email")
+
+-- BETWEEN
+DB:table("users"):whereBetween("age", 18, 65)
+
+-- Raw
+DB:table("users"):whereRaw("age > ? AND status = ?", 18, "active")
+```
+
+All where methods can be chained together:
+
+```lua
+local users = DB:table("users")
+    :where("active", true)
+    :whereIn("role", { "admin", "mod" })
+    :whereNotNull("email")
+    :whereBetween("age", 18, 65)
+    :whereNull("deleted_at")
+    :get()
+```
+
+### Pagination
+
+```lua
+local page = DB:table("users")
     :select("firstname", "lastname")
-    :paginate(entriesPerPage, currentPage)
+    :paginate(10, 1)
 
-print(("Returned %d out of %d"):format(entriesPerPage, obj.totalCount))
+print(("Returned %d out of %d"):format(#page.data, page.totalCount))
 ```
 
-### Basic Count Query
+Returns `{ data, totalCount, perPage, currentPage, lastPage }`.
+
+### Aggregates
 
 ```lua
--- Count the number of users active in the last hour
-local count = DB:table("users")
-    :where("last_seen", ">", os.time() - 3600)
-    :count()
-
-print(("Count: %d"):format(count))
+local count = DB:table("users"):count()
+local total = DB:table("orders"):where("status", "completed"):sum("total")
+local lowest = DB:table("products"):min("price")
+local highest = DB:table("products"):max("price")
+local average = DB:table("users"):avg("salary")
 ```
 
-### Basic Insert Query
+### Insert
 
 ```lua
--- Insert a new user record
-local insertId = DB:table("users"):insert({
+local insertID = DB:table("users"):insert({
     identifier = "char1:12345",
     firstname = "John",
     lastname = "Doe",
-    accounts = { bank = 100, cash = 0, black_money = 0 }, -- Automatically parsed as JSON string
+    accounts = { bank = 100, cash = 0 },
     group = "admin"
 })
 ```
 
-### Basic Update Query
+Table values are automatically encoded as JSON.
+
+### Update
 
 ```lua
--- Update user group
 local affectedRows = DB:table("users")
     :where("identifier", "char1:12345")
-    :update({
-        group = "moderator"
-    })
+    :update({ group = "moderator" })
 ```
 
-### Basic Delete Query
+### Delete
 
 ```lua
--- Delete user by identifier
 local affectedRows = DB:table("users")
     :where("identifier", "char1:12345")
     :delete()

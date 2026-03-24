@@ -1,8 +1,8 @@
 ---@class Input
-local Input = require 'src.classes.Input'
+local Input = require "src.classes.Input"
 
 ---@class Utilities
-local Utilities = require 'src.classes.Utilities'
+local Utilities = require "src.classes.Utilities"
 
 ---@class QueryBuilder
 ---@field selects table
@@ -10,17 +10,16 @@ local Utilities = require 'src.classes.Utilities'
 ---@field wheres table
 ---@field groupBys table
 ---@field orderBys table
----@field _limit number
----@field _offset number
----@field input Input
-local QueryBuilder = lib.class('QueryBuilder')
+---@field _limit number?
+---@field _offset number?
+---@field _distinct boolean
+local QueryBuilder = lib.class("QueryBuilder")
 
----Creates a new QueryBuilder instance
 ---@param tableName string
 ---@return QueryBuilder
 function QueryBuilder:constructor(tableName)
     if Utilities.isEmpty(tableName) then
-        error(('[%s]: Table name must be provided.'):format(Utilities.CURRENT_RESOURCE_NAME))
+        error(("[%s]: Table name must be provided."):format(Utilities.CURRENT_RESOURCE_NAME))
     end
 
     self.selects = {}
@@ -30,11 +29,11 @@ function QueryBuilder:constructor(tableName)
     self.orderBys = {}
     self._limit = nil
     self._offset = nil
+    self._distinct = false
 
     return self
 end
 
----Add a raw select clause
 ---@param expression string
 ---@return QueryBuilder
 function QueryBuilder:selectRaw(expression)
@@ -42,7 +41,6 @@ function QueryBuilder:selectRaw(expression)
     return self
 end
 
----Select specific columns
 ---@param ... string
 ---@return QueryBuilder
 function QueryBuilder:select(...)
@@ -50,38 +48,118 @@ function QueryBuilder:select(...)
     return self
 end
 
----Add a raw where clause
+---@return QueryBuilder
+function QueryBuilder:distinct()
+    self._distinct = true
+    return self
+end
+
 ---@param expression string
 ---@param ... any
 ---@return QueryBuilder
 function QueryBuilder:whereRaw(expression, ...)
-    self.wheres[#self.wheres + 1] = { _raw = expression, params = Input:sanitizeTable({ ... }) }
+    self.wheres[#self.wheres + 1] = { _raw = expression, params = Input.sanitizeTable({ ... }), _conjunction = "AND" }
     return self
 end
 
----Add a where clause
 ---@param column string
 ---@param operator string|any
----@param value any|nil
+---@param value any?
 ---@return QueryBuilder
 function QueryBuilder:where(column, operator, value)
     if value == nil then
         value = operator
-        operator = '='
+        operator = "="
     end
 
     self.wheres[#self.wheres + 1] = {
         column = column,
         operator = operator,
-        value = type(value) == 'table' and
-            Input:sanitizeTable(value) or
-            Input:sanitize(value)
+        value = type(value) == "table" and
+            Input.sanitizeTable(value) or
+            Input.sanitize(value),
+        _conjunction = "AND",
     }
 
     return self
 end
 
----Add a GROUP BY clause
+---@param column string
+---@param operator string|any
+---@param value any?
+---@return QueryBuilder
+function QueryBuilder:orWhere(column, operator, value)
+    if value == nil then
+        value = operator
+        operator = "="
+    end
+
+    self.wheres[#self.wheres + 1] = {
+        column = column,
+        operator = operator,
+        value = type(value) == "table" and
+            Input.sanitizeTable(value) or
+            Input.sanitize(value),
+        _conjunction = "OR",
+    }
+
+    return self
+end
+
+---@param column string
+---@param values table
+---@return QueryBuilder
+function QueryBuilder:whereIn(column, values)
+    self.wheres[#self.wheres + 1] = {
+        _in = true,
+        column = column,
+        values = Input.sanitizeTable(values),
+        _conjunction = "AND",
+    }
+
+    return self
+end
+
+---@param column string
+---@return QueryBuilder
+function QueryBuilder:whereNull(column)
+    self.wheres[#self.wheres + 1] = {
+        _null = true,
+        column = column,
+        _conjunction = "AND",
+    }
+
+    return self
+end
+
+---@param column string
+---@return QueryBuilder
+function QueryBuilder:whereNotNull(column)
+    self.wheres[#self.wheres + 1] = {
+        _notNull = true,
+        column = column,
+        _conjunction = "AND",
+    }
+
+    return self
+end
+
+---@param column string
+---@param min any
+---@param max any
+---@return QueryBuilder
+function QueryBuilder:whereBetween(column, min, max)
+    self.wheres[#self.wheres + 1] = {
+        _between = true,
+        column = column,
+        min = Input.sanitize(min),
+        max = Input.sanitize(max),
+        _conjunction = "AND",
+    }
+
+    return self
+end
+
 ---@param column string
 ---@return QueryBuilder
 function QueryBuilder:groupBy(column)
@@ -89,19 +167,18 @@ function QueryBuilder:groupBy(column)
     return self
 end
 
----Add an ORDER BY clause
 ---@param column string
----@param direction string
+---@param direction? string
 ---@return QueryBuilder
 function QueryBuilder:orderBy(column, direction)
     if not direction then
-        direction = 'ASC'
+        direction = "ASC"
     end
 
     local preparedDirection = direction:upper()
 
-    if preparedDirection ~= 'ASC' and preparedDirection ~= 'DESC' then
-        error(('[%s]: Invalid direction provided.'):format(Utilities.CURRENT_RESOURCE_NAME))
+    if preparedDirection ~= "ASC" and preparedDirection ~= "DESC" then
+        error(("[%s]: Invalid direction provided."):format(Utilities.CURRENT_RESOURCE_NAME))
     end
 
     self.orderBys[#self.orderBys + 1] = { column = column, direction = direction }
@@ -109,7 +186,6 @@ function QueryBuilder:orderBy(column, direction)
     return self
 end
 
----Set LIMIT clause
 ---@param limit number
 ---@return QueryBuilder
 function QueryBuilder:limit(limit)
@@ -117,7 +193,6 @@ function QueryBuilder:limit(limit)
     return self
 end
 
----Set OFFSET clause
 ---@param offset number
 ---@return QueryBuilder
 function QueryBuilder:offset(offset)
@@ -125,29 +200,64 @@ function QueryBuilder:offset(offset)
     return self
 end
 
----Build the SQL query
----@param isCount ?boolean
+---@param isCount? boolean
 ---@return string query, table params
 function QueryBuilder:buildQuery(isCount)
     local query, params = self:buildSelectQuery(isCount or false)
     return query, params
 end
 
----Execute the query and get all results
 ---@return table
 function QueryBuilder:get()
     local query, params = self:buildQuery()
     return MySQL.query.await(query, params)
 end
 
----Returns a number of found records
+---@return table?
+function QueryBuilder:first()
+    local query, params = self:buildSelectQuery(false)
+
+    if not self._limit then
+        query = query .. " LIMIT 1"
+    end
+
+    return MySQL.single.await(query, params)
+end
+
 ---@return number
 function QueryBuilder:count()
     local query, params = self:buildQuery(true)
     return MySQL.scalar.await(query, params)
 end
 
----Execute the query and return paginated results
+---@param column string
+---@return number
+function QueryBuilder:sum(column)
+    local query, params = self:buildAggregateQuery("SUM", column)
+    return MySQL.scalar.await(query, params)
+end
+
+---@param column string
+---@return any
+function QueryBuilder:min(column)
+    local query, params = self:buildAggregateQuery("MIN", column)
+    return MySQL.scalar.await(query, params)
+end
+
+---@param column string
+---@return any
+function QueryBuilder:max(column)
+    local query, params = self:buildAggregateQuery("MAX", column)
+    return MySQL.scalar.await(query, params)
+end
+
+---@param column string
+---@return number
+function QueryBuilder:avg(column)
+    local query, params = self:buildAggregateQuery("AVG", column)
+    return MySQL.scalar.await(query, params)
+end
+
 ---@param perPage number
 ---@param page number
 ---@return table
@@ -164,7 +274,6 @@ function QueryBuilder:paginate(perPage, page)
     }
 end
 
----Insert data into the table
 ---@param data table
 ---@return number insertId
 function QueryBuilder:insert(data)
@@ -172,7 +281,6 @@ function QueryBuilder:insert(data)
     return MySQL.insert.await(query, params)
 end
 
----Update data in the table
 ---@param data table
 ---@return number affectedRows
 function QueryBuilder:update(data)
@@ -180,25 +288,20 @@ function QueryBuilder:update(data)
     return MySQL.update.await(query, params)
 end
 
----Delete records from the table
 ---@return number affectedRows
 function QueryBuilder:delete()
     local query, params = self:buildDeleteQuery()
     return MySQL.update.await(query, params)
 end
 
----Build select query
----@param isCount ?boolean
+---@param fn string
+---@param column string
 ---@return string query, table params
-function QueryBuilder:buildSelectQuery(isCount)
-    isCount = isCount or false
-
+function QueryBuilder:buildAggregateQuery(fn, column)
     local query = {
-        ('SELECT %s FROM %s'):format(
-            isCount and 'COUNT(*)' or (#self.selects == 0 and '*' or table.concat(
-                Utilities.map(self.selects, Utilities.ensureBackticks),
-                ', '
-            )),
+        ("SELECT %s(%s) FROM %s"):format(
+            fn,
+            Utilities.ensureBackticks(column),
             Utilities.ensureBackticks(self.from)
         )
     }
@@ -206,15 +309,62 @@ function QueryBuilder:buildSelectQuery(isCount)
     local params = {}
 
     if #self.wheres > 0 then
-        local whereClause, whereParams = self:buildWhereClause(params)
-        query[#query + 1] = 'WHERE ' .. whereClause
-        params = whereParams
+        local whereClause = self:buildWhereClause(params)
+        query[#query + 1] = "WHERE " .. whereClause
     end
 
     if #self.groupBys > 0 then
-        query[#query + 1] = 'GROUP BY ' .. table.concat(
+        query[#query + 1] = "GROUP BY " .. table.concat(
             Utilities.map(self.groupBys, Utilities.ensureBackticks),
-            ', '
+            ", "
+        )
+    end
+
+    return table.concat(query, " "), params
+end
+
+---@param isCount? boolean
+---@return string query, table params
+function QueryBuilder:buildSelectQuery(isCount)
+    isCount = isCount or false
+
+    local selectClause = "SELECT"
+
+    if self._distinct and not isCount then
+        selectClause = "SELECT DISTINCT"
+    end
+
+    local columns
+    if isCount then
+        columns = "COUNT(*)"
+    elseif #self.selects == 0 then
+        columns = "*"
+    else
+        columns = table.concat(
+            Utilities.map(self.selects, Utilities.ensureBackticks),
+            ", "
+        )
+    end
+
+    local query = {
+        ("%s %s FROM %s"):format(
+            selectClause,
+            columns,
+            Utilities.ensureBackticks(self.from)
+        )
+    }
+
+    local params = {}
+
+    if #self.wheres > 0 then
+        local whereClause = self:buildWhereClause(params)
+        query[#query + 1] = "WHERE " .. whereClause
+    end
+
+    if #self.groupBys > 0 then
+        query[#query + 1] = "GROUP BY " .. table.concat(
+            Utilities.map(self.groupBys, Utilities.ensureBackticks),
+            ", "
         )
     end
 
@@ -222,62 +372,87 @@ function QueryBuilder:buildSelectQuery(isCount)
         local clauses = {}
 
         for _, orderBy in ipairs(self.orderBys) do
-            clauses[#clauses + 1] = ('%s %s'):format(
+            clauses[#clauses + 1] = ("%s %s"):format(
                 Utilities.ensureBackticks(orderBy.column),
                 orderBy.direction
             )
         end
 
-        query[#query + 1] = 'ORDER BY ' .. table.concat(clauses, ', ')
+        query[#query + 1] = "ORDER BY " .. table.concat(clauses, ", ")
     end
 
     if self._limit then
-        query[#query + 1] = 'LIMIT ' .. self._limit
+        query[#query + 1] = "LIMIT " .. self._limit
     end
 
     if self._offset then
-        query[#query + 1] = 'OFFSET ' .. self._offset
+        query[#query + 1] = "OFFSET " .. self._offset
     end
 
-    return table.concat(query, ' '), params
+    return table.concat(query, " "), params
 end
 
----Build where clause
 ---@param params table
 ---@return string clause
----@return table params
 function QueryBuilder:buildWhereClause(params)
     if #self.wheres == 0 then
-        return '', params
+        return ""
     end
 
-    local clauses = {}
+    local result = {}
 
-    for _, where in ipairs(self.wheres) do
+    for i, where in ipairs(self.wheres) do
+        local clause
+
         if where._raw then
-            clauses[#clauses + 1] = where._raw
-            params = where.params
-            goto continue
-        end
+            clause = where._raw
 
-        if type(where) == 'string' then
-            clauses[#clauses + 1] = where
+            for j = 1, #where.params do
+                params[#params + 1] = where.params[j]
+            end
+        elseif where._in then
+            if #where.values == 0 then
+                clause = "1 = 0"
+            else
+                local placeholders = {}
+                for j = 1, #where.values do
+                    placeholders[j] = "?"
+                    params[#params + 1] = where.values[j]
+                end
+
+                clause = ("%s IN (%s)"):format(
+                    Utilities.ensureBackticks(where.column),
+                    table.concat(placeholders, ", ")
+                )
+            end
+        elseif where._null then
+            clause = ("%s IS NULL"):format(Utilities.ensureBackticks(where.column))
+        elseif where._notNull then
+            clause = ("%s IS NOT NULL"):format(Utilities.ensureBackticks(where.column))
+        elseif where._between then
+            clause = ("%s BETWEEN ? AND ?"):format(Utilities.ensureBackticks(where.column))
+            params[#params + 1] = where.min
+            params[#params + 1] = where.max
+        elseif type(where) == "string" then
+            clause = where
         else
-            clauses[#clauses + 1] = ('%s %s ?'):format(
+            clause = ("%s %s ?"):format(
                 Utilities.ensureBackticks(where.column),
                 where.operator
             )
-
             params[#params + 1] = where.value
         end
 
-        ::continue::
+        if i == 1 then
+            result[1] = clause
+        else
+            result[#result + 1] = (" %s %s"):format(where._conjunction or "AND", clause)
+        end
     end
 
-    return table.concat(clauses, ' AND '), params
+    return table.concat(result)
 end
 
----Build insert query
 ---@param data table
 ---@return string query, table params
 function QueryBuilder:buildInsertQuery(data)
@@ -287,22 +462,21 @@ function QueryBuilder:buildInsertQuery(data)
 
     for _, column in ipairs(Utilities.getSorted(data)) do
         columns[#columns + 1] = Utilities.ensureBackticks(column)
-        values[#values + 1] = '?'
-        params[#params + 1] = type(data[column]) == 'table' and
+        values[#values + 1] = "?"
+        params[#params + 1] = type(data[column]) == "table" and
             json.encode(data[column]) or
             data[column]
     end
 
     return
-        ('INSERT INTO %s (%s) VALUES (%s)'):format(
+        ("INSERT INTO %s (%s) VALUES (%s)"):format(
             Utilities.ensureBackticks(self.from),
-            table.concat(columns, ', '),
-            table.concat(values, ', ')
+            table.concat(columns, ", "),
+            table.concat(values, ", ")
         ),
         params
 end
 
----Build update query
 ---@param data table
 ---@return string query, table params
 function QueryBuilder:buildUpdateQuery(data)
@@ -310,29 +484,29 @@ function QueryBuilder:buildUpdateQuery(data)
     local params = {}
 
     for _, column in ipairs(Utilities.getSorted(data)) do
-        columns[#columns + 1] = Utilities.ensureBackticks(column) .. ' = ?'
+        columns[#columns + 1] = Utilities.ensureBackticks(column) .. " = ?"
         params[#params + 1] = data[column]
     end
 
+    local whereClause = self:buildWhereClause(params)
+
     return
-        ('UPDATE %s SET %s WHERE %s'):format(
+        ("UPDATE %s SET %s WHERE %s"):format(
             Utilities.ensureBackticks(self.from),
-            table.concat(columns, ', '),
-            self:buildWhereClause(params)
+            table.concat(columns, ", "),
+            whereClause
         ),
         params
 end
 
----Build delete query
 ---@return string query, table params
 function QueryBuilder:buildDeleteQuery()
     local params = {}
-    local query = ('DELETE FROM %s'):format(Utilities.ensureBackticks(self.from))
+    local query = ("DELETE FROM %s"):format(Utilities.ensureBackticks(self.from))
 
     if #self.wheres > 0 then
-        local whereClause, whereParams = self:buildWhereClause(params)
-        query = query .. ' WHERE ' .. whereClause
-        params = whereParams
+        local whereClause = self:buildWhereClause(params)
+        query = query .. " WHERE " .. whereClause
     end
 
     return query, params
